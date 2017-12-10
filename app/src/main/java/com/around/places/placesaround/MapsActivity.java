@@ -21,15 +21,18 @@ import com.google.android.gms.maps.model.MarkerOptions;
 import java.io.IOException;
 import java.util.List;
 import android.util.Log;
+import java.util.concurrent.*;
 
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
 
     private GoogleMap mMap;
+    private static final String TAG = "MapsActivity";
     LocationManager locationManager;
     LocationListener locationListener;
-
-    private static final String TAG = "MapsActivity";
+    int PROXIMITY_RADIUS = 1000;
+    String placesKey = "my_key";
+    String placesUrl = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?";
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
@@ -63,12 +66,32 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
 
         locationListener = new LocationListener() {
+            private int FASTEST_INTERVAL = 100000;
+            private Location currentLocation = null;
+            private long locationUpdatedAt = Long.MIN_VALUE;
             @Override
             public void onLocationChanged(Location location) {
+                // avoid update the location frequently in order to save calls to API
+                boolean updateLocation = false;
+                if(currentLocation == null){
+                    currentLocation = location;
+                    locationUpdatedAt = System.currentTimeMillis();
+                    updateLocation = true;
+                } else {
+                    long secondsElapsed = TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis() - locationUpdatedAt);
+                    if (secondsElapsed >= TimeUnit.MILLISECONDS.toSeconds(FASTEST_INTERVAL)){
+                        // check location accuracy here
+                        currentLocation = location;
+                        locationUpdatedAt = System.currentTimeMillis();
+                        updateLocation = true;
+                    }
+                }
+                if(updateLocation){
+                    displayLocationsOnMap(location);
+                }
 
-                displayCurrentLocationOnMap(location);
+
             }
-
 
             @Override
             public void onStatusChanged(String s, int i, Bundle bundle) {
@@ -85,8 +108,7 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
 
             }
         };
-
-
+        // check if there are permissions, if not request from the user
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
@@ -95,23 +117,60 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         else{
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener);
             Location lastKnownLocation = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-            displayCurrentLocationOnMap(lastKnownLocation);
+            displayLocationsOnMap(lastKnownLocation);
         }
     }
 
-    public void displayCurrentLocationOnMap(Location location){
+    /**
+     * display both the current location and the places around on the map
+     * @param location
+     */
+
+    public void displayLocationsOnMap(Location location){
+
+        Object dataTransfer[] = new Object[2];
+        GetNearbyPlacesData getNearbyPlacesData = new GetNearbyPlacesData();
+
         float zoomLevel = 16.0f;
-        double lat = location.getLatitude();
-        double lon = location.getLongitude();
-        LatLng latLang = new LatLng(lat, lon);
-        Geocoder geocoder = new Geocoder(getApplicationContext());
-        try {
-            List<Address> addressList = geocoder.getFromLocation(lat, lon, 1);
-            String address = addressList.get(0).getAddressLine(0);
-            mMap.addMarker(new MarkerOptions().position(latLang).title(address));
-            mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLang, zoomLevel));
-        } catch (IOException e) {
-            Log.e(TAG, "exception", e);
+        if(location != null) {
+            double lat = location.getLatitude();
+            double lon = location.getLongitude();
+            String locationType = "restaurant";
+            String url = getUrl(lat, lon, locationType);
+            dataTransfer[0] = mMap;
+            dataTransfer[1] = url;
+            getNearbyPlacesData.execute(dataTransfer); // get places location via API
+            /* set current location on the map in different color */
+            LatLng latLang = new LatLng(lat, lon);
+            Geocoder geocoder = new Geocoder(getApplicationContext());
+            try {
+                List<Address> addressList = geocoder.getFromLocation(lat, lon, 1);
+                if (addressList != null && addressList.size() > 0) {
+                    String address = addressList.get(0).getAddressLine(0);
+                    mMap.addMarker(new MarkerOptions().position(latLang).title(address));
+                }
+                mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLang, zoomLevel));
+
+            } catch (IOException e) {
+                Log.e(TAG, "exception", e);
+            }
         }
+    }
+
+    /**
+     * build the url for the API call the get places
+     * @param lat
+     * @param lon
+     * @param locationType
+     * @return
+     */
+    private String getUrl(double lat, double lon, String locationType){
+        StringBuilder googlePlacesUrl = new StringBuilder(placesUrl);
+        googlePlacesUrl.append("location="+lat+","+lon);
+        googlePlacesUrl.append("&radius="+PROXIMITY_RADIUS);
+        googlePlacesUrl.append("&sensor=true");
+        googlePlacesUrl.append("&type="+locationType);
+        googlePlacesUrl.append("&key="+placesKey);
+        return googlePlacesUrl.toString();
     }
 }
