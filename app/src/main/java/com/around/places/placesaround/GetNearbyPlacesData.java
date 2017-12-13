@@ -3,24 +3,20 @@ package com.around.places.placesaround;
 import android.os.AsyncTask;
 import android.util.Log;
 
+import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
-
-/**
- * Created by user on 10/12/2017.
- */
 
 public class GetNearbyPlacesData extends AsyncTask<Object, String, String> {
 
     private String googlePlacesData;
     private GoogleMap mMap;
-    String url;
+    private String url;
 
     @Override
     protected String doInBackground(Object... objects){
@@ -39,11 +35,19 @@ public class GetNearbyPlacesData extends AsyncTask<Object, String, String> {
 
     @Override
     protected void onPostExecute(String s){
-
-        List<HashMap<String, String>> nearbyPlaceList;
+        float zoomLevel = 16.0f;
+        List<Place> nearbyPlaceList;
         DataParser parser = new DataParser();
         nearbyPlaceList = parser.parse(s);
+
+        DataHolder.getInstance().setPlacesList(nearbyPlaceList); // save the places list in singleton
+
         Log.d("nearbyplacesdata","called parse method");
+        mMap.clear();
+        Place currentPlace = DataHolder.getInstance().getCurrentPlace();
+        LatLng latLang = new LatLng(currentPlace.getLatitude(), currentPlace.getLongitude());
+        mMap.addMarker(new MarkerOptions().position(latLang).title(currentPlace.getAddress()));
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLang, zoomLevel));
         showNearbyPlaces(nearbyPlaceList);
     }
 
@@ -53,17 +57,17 @@ public class GetNearbyPlacesData extends AsyncTask<Object, String, String> {
      * them on the map
      * @param nearbyPlaceList
      */
-    private void showNearbyPlaces(List<HashMap<String, String>> nearbyPlaceList)
+    private void showNearbyPlaces(List<Place> nearbyPlaceList)
     {
         for(int i = 0; i < nearbyPlaceList.size(); i++)
         {
             MarkerOptions markerOptions = new MarkerOptions();
-            HashMap<String, String> googlePlace = nearbyPlaceList.get(i);
+            Place googlePlace = nearbyPlaceList.get(i);
 
-            String placeName = googlePlace.get("place_name");
-            String vicinity = googlePlace.get("vicinity");
-            double lat = Double.parseDouble( googlePlace.get("lat"));
-            double lng = Double.parseDouble( googlePlace.get("lng"));
+            String placeName = googlePlace.getPlaceName();
+            String vicinity = googlePlace.getVicinity();
+            double lat = googlePlace.getLatitude();
+            double lng = googlePlace.getLongitude();
 
             LatLng latLng = new LatLng( lat, lng);
             markerOptions.position(latLng);
